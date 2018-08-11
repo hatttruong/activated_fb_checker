@@ -133,9 +133,22 @@ def check_url_response(session, cookies, check_url):
     )))
     login_failed = True
     if len(home_button) > 0:
-        if home_button[0] == 'Home':
+        if home_button[0] in ['Home', 'Trang chủ']:
             login_failed = False
     return login_failed, response
+
+
+def is_deactivated(response):
+    """Summary
+
+    Args:
+        response (TYPE): Description
+
+    Returns:
+        TYPE: Description
+    """
+    check_text = "Sorry, this content isn&#039;t available at the moment"
+    return response.text.find(check_text) >= 0
 
 
 def check_account_activated(args):
@@ -167,12 +180,12 @@ def check_account_activated(args):
     username = args.username
     check_url = 'https://www.facebook.com/%s' % username
 
-    check_text = "Sorry, this content isn&#039;t available at the moment"
     session, cookies = get_session(email_fb, password_fb)
 
     # check if user activate or not every 5 minutes
     ending_date = datetime.now() + timedelta(days=int(args.days))
     print('checking will be end in %s' % ending_date)
+    current_activated = True
     while datetime.now() < ending_date:
 
         login_failed, response = check_url_response(
@@ -190,19 +203,30 @@ def check_account_activated(args):
                 send_email(email, password_email, [email], subject, message)
                 break
 
-        if response.text.find(check_text) == -1:
-            # send email
-            print('username=%s has activated' % username)
-            with open('evidence.html', 'w') as f:
-                f.write(response.text)
-
-            subject = 'Alert activate FB Account %s' % username
-            message = "User %s has activate. Follow this link to check %s" % (
-                username, check_url)
-            send_email(email, password_email, recipients, subject, message)
-            break
-        else:
+        if is_deactivated(response):
             print('username=%s has deactivated' % username)
+            if current_activated:
+                current_activated = False
+                with open('evidence_deactivated.html', 'w') as f:
+                    f.write(response.text)
+
+                subject = 'Alert deactivate FB Account %s' % username
+                message = "User %s has deactivated. Follow this link to check %s" % (
+                    username, check_url)
+                send_email(email, password_email, recipients, subject, message)
+
+        else:
+            print('username=%s has activated' % username)
+            if current_activated is False:
+                current_activated = True
+                # send email
+                with open('evidence_activated.html', 'w') as f:
+                    f.write(response.text)
+
+                subject = 'Alert activate FB Account %s' % username
+                message = "User %s has activated. Follow this link to check %s" % (
+                    username, check_url)
+                send_email(email, password_email, recipients, subject, message)
 
         # Delay in X minute
         time.sleep(delay_minutes * 60)
