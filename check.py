@@ -4,6 +4,9 @@ This solution is based on the answer at link:
 
 Attributes:
     parser (TYPE): Description
+
+TODO:
+resolve the problem of language. Currently, the result is in Vietnamese
 """
 import requests
 import argparse
@@ -104,7 +107,8 @@ def login(session, email, password):
         TYPE: Description
     '''
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
+        "Accept-Language": "en-US,en;q=0.5"
     }
     url = 'https://m.facebook.com/login.php'
     login_data = {
@@ -122,7 +126,14 @@ def login(session, email, password):
 
 
 def check_url_response(session, cookies, check_url):
-    response = session.get(check_url, cookies=cookies,
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36',
+        'Cache-Control': 'no-cache',
+        "Accept-Language": "en-US,en;q=0.5"
+    }
+    response = session.get(check_url,
+                           cookies=cookies,
+                           headers=headers,
                            allow_redirects=False)
     with open('check_url.html', 'w') as f:
         f.write(response.text)
@@ -147,8 +158,14 @@ def is_deactivated(response):
     Returns:
         TYPE: Description
     """
-    check_text = "Sorry, this content isn&#039;t available at the moment"
-    return response.text.find(check_text) >= 0
+    with open('evidence.html', 'w') as f:
+        f.write(response.text)
+    check_texts = ['Sorry, this content isn&#039;t available at the moment',
+                   'Rất tiếc, nội dung này hiện không khả dụng']
+    for check_text in check_texts:
+        if response.text.find(check_text) >= 0:
+            return True
+    return False
 
 
 def check_account_activated(args):
@@ -171,8 +188,11 @@ def check_account_activated(args):
     recipients = load_configuration(section_name, 'Recipients')
     recipients = [x.strip() for x in recipients.split(',')]
     delay_minutes = int(load_configuration(section_name, 'DelayMinutes'))
+    current_activated = True if args.status == 'a' else False
+
     # print(email_fb, password_fb)
     # print(email, password_email)
+    print('Current activated: ', current_activated)
     print('Recipients:', recipients)
     # print(delay_minutes)
 
@@ -185,7 +205,7 @@ def check_account_activated(args):
     # check if user activate or not every 5 minutes
     ending_date = datetime.now() + timedelta(days=int(args.days))
     print('checking will be end in %s' % ending_date)
-    current_activated = True
+    message_pattern = "User %s has %s. Follow this link to check %s"
     while datetime.now() < ending_date:
 
         login_failed, response = check_url_response(
@@ -204,19 +224,20 @@ def check_account_activated(args):
                 break
 
         if is_deactivated(response):
-            print('username=%s has deactivated' % username)
+            print('%s: username=%s has deactivated' %
+                  (datetime.now(), username))
             if current_activated:
                 current_activated = False
                 with open('evidence_deactivated.html', 'w') as f:
                     f.write(response.text)
 
                 subject = 'Alert deactivate FB Account %s' % username
-                message = "User %s has deactivated. Follow this link to check %s" % (
-                    username, check_url)
+                message = message_pattern % (
+                    'deactivated', username, check_url)
                 send_email(email, password_email, recipients, subject, message)
 
         else:
-            print('username=%s has activated' % username)
+            print('%s: username=%s has activated' % (datetime.now(), username))
             if current_activated is False:
                 current_activated = True
                 # send email
@@ -224,16 +245,19 @@ def check_account_activated(args):
                     f.write(response.text)
 
                 subject = 'Alert activate FB Account %s' % username
-                message = "User %s has activated. Follow this link to check %s" % (
-                    username, check_url)
+                message = message_pattern % ('activated', username, check_url)
                 send_email(email, password_email, recipients, subject, message)
 
+        print('Wait %s minutes for next check...' % delay_minutes)
         # Delay in X minute
         time.sleep(delay_minutes * 60)
 
 
 if __name__ == '__main__':
     parser.add_argument('username', help='username will be checked')
+    parser.add_argument(
+        'status', choices=['a', 'd'],
+        help='current status of user (a: activated, d: deactivated')
 
     parser.add_argument(
         'days', help='number of days that checking function runs')

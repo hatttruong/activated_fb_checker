@@ -38,5 +38,7 @@ sudo pip3 install lxml
 - Run the checking
 
 ```
-$ sudo python3 check.py <watching_account> <days_to_watch> <secret_key>
+$ sudo python3 check.py <watching_account> <current_status> <days_to_watch> <secret_key>
+
+$ sudo python3 check.py thongocngatho a 7 123
 ```
