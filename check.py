@@ -233,7 +233,7 @@ def check_account_activated(args):
 
                 subject = 'Alert deactivate FB Account %s' % username
                 message = message_pattern % (
-                    'deactivated', username, check_url)
+                    username, 'deactivated', check_url)
                 send_email(email, password_email, recipients, subject, message)
 
         else:
@@ -245,7 +245,7 @@ def check_account_activated(args):
                     f.write(response.text)
 
                 subject = 'Alert activate FB Account %s' % username
-                message = message_pattern % ('activated', username, check_url)
+                message = message_pattern % (username, 'activated', check_url)
                 send_email(email, password_email, recipients, subject, message)
 
         print('Wait %s minutes for next check...' % delay_minutes)
