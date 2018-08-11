@@ -8,6 +8,7 @@ Attributes:
 TODO:
 resolve the problem of language. Currently, the result is in Vietnamese
 """
+import os
 import requests
 import argparse
 from datetime import datetime, timedelta
@@ -24,8 +25,7 @@ if sys.version_info[0] < 3:
 else:
     import configparser as ConfigParser
 
-
-parser = argparse.ArgumentParser()
+LASTEST_STATUS_LOG = 'lastest_status.log'
 
 
 def load_configuration(section, config_name):
@@ -149,7 +149,7 @@ def check_url_response(session, cookies, check_url):
     return login_failed, response
 
 
-def is_deactivated(response):
+def get_status_from_response(response):
     """Summary
 
     Args:
@@ -158,14 +158,35 @@ def is_deactivated(response):
     Returns:
         TYPE: Description
     """
+    new_status = 'a'
     with open('evidence.html', 'w') as f:
         f.write(response.text)
     check_texts = ['Sorry, this content isn&#039;t available at the moment',
                    'Rất tiếc, nội dung này hiện không khả dụng']
     for check_text in check_texts:
         if response.text.find(check_text) >= 0:
-            return True
-    return False
+            new_status = 'd'
+            break
+
+    # log the current status to file
+    with open(LASTEST_STATUS_LOG, 'w') as f:
+        f.write('%s;%s' % (new_status,
+                           datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    return new_status
+
+
+def load_lastest_status():
+    lastest_status = 'a'
+    if os.path.isfile(LASTEST_STATUS_LOG):
+        with open(LASTEST_STATUS_LOG, 'r') as f:
+            content = f.read()
+            print('log file content: %s' % content)
+            info = content.split(';')
+            if len(info) >= 2:
+                print('Status of user %s, at %s: %s' %
+                      (args.username, info[1], info[0]))
+                lastest_status = info[0].strip()
+    return lastest_status
 
 
 def check_account_activated(args):
@@ -174,6 +195,14 @@ def check_account_activated(args):
     Args:
         args (TYPE): Description
     """
+    # get the lastest user status
+    if args.status is None:
+        # load status from file
+        args.status = load_lastest_status()
+
+    # set current status
+    current_status = args.status
+
     # load setting.ini
     section_name = 'SectionCommon'
     secret_key = args.secret_key
@@ -188,11 +217,11 @@ def check_account_activated(args):
     recipients = load_configuration(section_name, 'Recipients')
     recipients = [x.strip() for x in recipients.split(',')]
     delay_minutes = int(load_configuration(section_name, 'DelayMinutes'))
-    current_activated = True if args.status == 'a' else False
 
     # print(email_fb, password_fb)
     # print(email, password_email)
-    print('Current activated: ', current_activated)
+    print('Current status: ',
+          'activated' if current_status == 'a' else 'deactivated')
     print('Recipients:', recipients)
     # print(delay_minutes)
 
@@ -223,46 +252,44 @@ def check_account_activated(args):
                 send_email(email, password_email, [email], subject, message)
                 break
 
-        if is_deactivated(response):
-            print('%s: username=%s has deactivated' %
-                  (datetime.now(), username))
-            if current_activated:
-                current_activated = False
-                with open('evidence_deactivated.html', 'w') as f:
-                    f.write(response.text)
-
-                subject = 'Alert deactivate FB Account %s' % username
-                message = message_pattern % (
-                    username, 'deactivated', check_url)
-                send_email(email, password_email, recipients, subject, message)
-
+        new_status = get_status_from_response(response)
+        if new_status == current_status:
+            new_status_full = 'deactivating'
+            if new_status == 'a':
+                new_status_full = 'activating'
+            print('%s: username=%s has been still %s' %
+                  (datetime.now(), username, new_status_full))
         else:
-            print('%s: username=%s has activated' % (datetime.now(), username))
-            if current_activated is False:
-                current_activated = True
-                # send email
-                with open('evidence_activated.html', 'w') as f:
-                    f.write(response.text)
+            current_status = new_status
+            new_status_full = 'deactivated'
+            if new_status == 'a':
+                new_status_full = 'activated'
+            print('%s: username=%s has %s' %
+                  (datetime.now(), username, new_status_full))
+            with open('evidence_%s.html' % new_status_full, 'w') as f:
+                f.write(response.text)
 
-                subject = 'Alert activate FB Account %s' % username
-                message = message_pattern % (username, 'activated', check_url)
-                send_email(email, password_email, recipients, subject, message)
+            subject = '[Alert] FB Account %s status has %s' % (
+                username, new_status_full)
+            message = message_pattern % (username, new_status_full, check_url)
+            send_email(email, password_email, recipients, subject, message)
 
         print('Wait %s minutes for next check...' % delay_minutes)
         # Delay in X minute
         time.sleep(delay_minutes * 60)
 
 
+parser = argparse.ArgumentParser()
+
+
 if __name__ == '__main__':
     parser.add_argument('username', help='username will be checked')
     parser.add_argument(
-        'status', choices=['a', 'd'],
-        help='current status of user (a: activated, d: deactivated')
-
-    parser.add_argument(
         'days', help='number of days that checking function runs')
-
     parser.add_argument('secret_key', help='secret key to decrypt password')
+    parser.add_argument(
+        '-s', '--status', choices=['a', 'd'],
+        help='current status of user (a: activated, d: deactivated)')
 
     args = parser.parse_args()
     check_account_activated(args)
