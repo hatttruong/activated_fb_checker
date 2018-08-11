@@ -1,0 +1,7 @@
+[SectionCommon]
+EmailFacebook =
+PasswordFacebook =
+Email =
+PasswordEmail =
+Recipients = aaa@outlook.com, bbb@outlook.com
+DelayMinutes = 5
